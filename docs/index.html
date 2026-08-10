@@ -95,6 +95,7 @@
   <div class="datebox">
     <button class="nav-btn" id="dprev">‹</button>
     <input type="date" id="date">
+    <span id="dow" style="color:var(--ink);font-size:13px;font-weight:600;min-width:34px"></span>
     <button class="nav-btn" id="dnext">›</button>
     <button class="play" id="play" title="Animate through dates">▶</button>
   </div>
@@ -130,7 +131,7 @@ let ALL=[],MARKERS={},DATES=[],curIdx=0,idxByDay={},selected=null,timer=null;
 fetch('data/stations.json').then(r=>r.json()).then(data=>{
   document.getElementById('gen').textContent='updated '+(data.generated||'').replace('T',' ').slice(0,16);
   ALL=data.stations.filter(s=>s.lat!=null&&s.lon!=null);
-  ALL.forEach(s=>{s._by={};(s.day_status||[]).forEach(([d,v,c])=>s._by[d]=[v,c]);});
+  ALL.forEach(s=>{s._by={};(s.day_status||[]).forEach(([d,v,c,h])=>s._by[d]=[v,c,h]);});
   const set=new Set();ALL.forEach(s=>(s.day_status||[]).forEach(r=>set.add(r[0])));
   DATES=[...set].sort();DATES.forEach((d,i)=>idxByDay[d]=i);curIdx=DATES.length-1;
   fill('fCounty',[...new Set(ALL.map(s=>s.county).filter(Boolean))].sort(),'All counties');
@@ -150,7 +151,12 @@ fetch('data/stations.json').then(r=>r.json()).then(data=>{
 });
 function fill(id,vals,lab){document.getElementById(id).innerHTML=`<option value="">${lab}</option>`+vals.map(v=>`<option>${v}</option>`).join('');}
 function setDate(i){curIdx=Math.max(0,Math.min(DATES.length-1,i));
-  document.getElementById('slider').value=curIdx;document.getElementById('date').value=DATES[curIdx];render();}
+  document.getElementById('slider').value=curIdx;
+  const d=DATES[curIdx];
+  document.getElementById('date').value=d;
+  const wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(d+'T00:00').getDay()];
+  document.getElementById('dow').textContent=wd;
+  render();}
 function passesFilter(s){const c=document.getElementById('fCounty').value,r=document.getElementById('fRoute').value,t=document.getElementById('fType').value;
   return (!c||s.county===c)&&(!r||s.route===r)&&(!t||s.rururb===t);}
 function render(){
@@ -158,9 +164,9 @@ function render(){
   ALL.forEach(s=>{const m=MARKERS[s.local_id];
     if(!passesFilter(s)){if(map.hasLayer(m))map.removeLayer(m);return;}
     if(!map.hasLayer(m))m.addTo(map);shown++;
-    const rec=s._by[day],code=rec?rec[1]:6,vol=rec?rec[0]:null;counts[code]++;
+    const rec=s._by[day],code=rec?rec[1]:6,vol=rec?rec[0]:null,hol=rec?rec[2]:0;counts[code]++;
     m.setStyle({fillColor:css(SVAR[code])});m.unbindTooltip();
-    m.bindTooltip(`<div class="tt"><b>${s.name}</b><br>${day} · <span class="v">${fmt(vol)}</span> · ${SLABEL[code]}</div>`,{direction:'top',offset:[0,-6]});
+    m.bindTooltip(`<div class="tt"><b>${s.name}</b><br>${day} · <span class="v">${fmt(vol)}</span> · ${SLABEL[code]}${hol?' · 🎉 Holiday':''}</div>`,{direction:'top',offset:[0,-6]});
     if(rec&&code!==2&&code!==6)unusual.push({s,code});});
   document.getElementById('summary').innerHTML=
     `<span><i style="background:${css('--s4')}"></i><b>${counts[3]+counts[4]}</b> above</span>`+
