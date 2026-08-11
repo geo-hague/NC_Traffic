@@ -157,6 +157,16 @@ const fmt=n=>n==null?'—':Math.round(n).toLocaleString('en-US');
 const hhmm=i=>`${String(Math.floor(i/4)).padStart(2,'0')}:${String((i%4)*15).padStart(2,'0')}`;
 const P=new URLSearchParams(location.search),SID=P.get('id');
 let STATION=null,DAILY=null,MONTHS={},CMP=null,DIRCOLORS={};
+let HIDDEN=new Set();   // lane keys toggled off in the direction chart
+// shared floating tooltip for chart hovers
+const chartTip=document.createElement('div');
+chartTip.style.cssText='position:fixed;pointer-events:none;z-index:50;display:none;'+
+  'background:#0d1116;border:1px solid var(--line);border-radius:6px;padding:6px 9px;'+
+  'font-size:12px;font-family:ui-monospace,monospace;color:var(--ink);white-space:nowrap';
+document.body.appendChild(chartTip);
+function showTip(px,py,html){chartTip.innerHTML=html;chartTip.style.display='block';
+  chartTip.style.left=(px+14)+'px';chartTip.style.top=(py+14)+'px';}
+function hideTip(){chartTip.style.display='none';}
 
 if(!SID)document.body.innerHTML='<p class="msg">No station id. <a href="index.html">Back to map</a>.</p>';
 else init();
@@ -272,31 +282,57 @@ function drawProfile(day,lanes){
   ctx.beginPath();ctx.moveTo(x(0),y(0));a.forEach((v,i)=>ctx.lineTo(x(i),y(v)));ctx.lineTo(x(95),y(0));ctx.closePath();ctx.fillStyle=css('--primary')+'22';ctx.fill();
   ctx.beginPath();a.forEach((v,i)=>i?ctx.lineTo(x(i),y(v)):ctx.moveTo(x(i),y(v)));ctx.strokeStyle=css('--primary');ctx.lineWidth=2;ctx.stroke();
   hourLabels(ctx,H,pad,x);
+  // hover: nearest 15-min slot
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();
+    const rel=(e.clientX-r.left)/(r.width)*W;
+    let i=Math.round((rel-pad.l)/((W-pad.l-pad.r)/95));
+    if(i<0||i>95){hideTip();return;}
+    let h=`<b>${hhmm(i)}</b> · ${fmt(a[i])}`;
+    if(b)h+=` <span style="color:${css('--compare')}">/ ${fmt(b[i])}</span>`;
+    showTip(e.clientX,e.clientY,h);};
+  cv.onmouseleave=hideTip;
 }
 function drawDirSplit(lanes){
   const cv=document.getElementById('dirsplit'),ctx=setup(cv),legend=document.getElementById('laneLegend');legend.innerHTML='';
   if(!lanes){noData(ctx,cv);return;}
-  const dirs=[...new Set(Object.keys(lanes).map(k=>k.split('|')[0]))];
+  const allKeys=Object.keys(lanes).sort();
+  const dirs=[...new Set(allKeys.map(k=>k.split('|')[0]))];
   const W=cv.clientWidth,H=200,pad={l:48,r:12,t:10,b:22};
-  // scale to max stacked single-direction volume
+  const vis=k=>!HIDDEN.has(k);
+  // scale to max stacked single-direction volume (visible lanes only)
   let mx=1;
-  dirs.forEach(d=>{const keys=Object.keys(lanes).filter(k=>k.startsWith(d+'|'));
+  dirs.forEach(d=>{const keys=allKeys.filter(k=>k.startsWith(d+'|')&&vis(k));
     for(let i=0;i<96;i++)mx=Math.max(mx,keys.reduce((s,k)=>s+(lanes[k][i]||0),0));});
   const x=i=>pad.l+i*(W-pad.l-pad.r)/95,y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
   grid(ctx,W,H,pad,mx);
   dirs.forEach(d=>{
-    const keys=Object.keys(lanes).filter(k=>k.startsWith(d+'|')).sort();
+    const keys=allKeys.filter(k=>k.startsWith(d+'|')&&vis(k));
     const base=new Array(96).fill(0);
     keys.forEach(k=>{const ln=k.split('|')[1],col=css(DIRCOLORS[d][ln]||'--s2');
       ctx.beginPath();
       for(let i=0;i<96;i++)ctx.lineTo(x(i),y(base[i]+(lanes[k][i]||0)));
       for(let i=95;i>=0;i--)ctx.lineTo(x(i),y(base[i]));
       ctx.closePath();ctx.fillStyle=col+'bb';ctx.fill();
-      for(let i=0;i<96;i++)base[i]+=(lanes[k][i]||0);
-      const sp=document.createElement('span');
-      sp.innerHTML=`<span class="swatch" style="background:${col}"></span>${DIR_LABEL[d]||d} L${ln}`;legend.appendChild(sp);});
+      for(let i=0;i<96;i++)base[i]+=(lanes[k][i]||0);});
   });
+  // clickable legend (all lanes, greyed when hidden)
+  allKeys.forEach(k=>{const[d,ln]=k.split('|'),col=css(DIRCOLORS[d]?.[ln]||'--s2');
+    const sp=document.createElement('span');
+    sp.style.cssText='cursor:pointer;'+(vis(k)?'':'opacity:.35');
+    sp.innerHTML=`<span class="swatch" style="background:${col}"></span>${DIR_LABEL[d]||d} L${ln}`;
+    sp.onclick=()=>{if(HIDDEN.has(k))HIDDEN.delete(k);else HIDDEN.add(k);drawDirSplit(lanes);};
+    legend.appendChild(sp);});
   hourLabels(ctx,H,pad,x);
+  // hover: show each visible lane's value at that slot
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();
+    const rel=(e.clientX-r.left)/(r.width)*W;
+    let i=Math.round((rel-pad.l)/((W-pad.l-pad.r)/95));
+    if(i<0||i>95){hideTip();return;}
+    let rows=`<b>${hhmm(i)}</b>`;
+    allKeys.filter(vis).forEach(k=>{const[d,ln]=k.split('|');
+      rows+=`<br>${(DIR_LABEL[d]||d)} L${ln}: ${fmt(lanes[k][i]||0)}`;});
+    showTip(e.clientX,e.clientY,rows);};
+  cv.onmouseleave=hideTip;
 }
 function buildMetrics(lanes){
   const box=document.getElementById('metrics');

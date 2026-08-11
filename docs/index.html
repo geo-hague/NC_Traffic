@@ -95,8 +95,8 @@
   <div class="datebox">
     <button class="nav-btn" id="dprev">‹</button>
     <input type="date" id="date">
-    <span id="dow" style="color:var(--ink);font-size:13px;font-weight:600;min-width:34px"></span>
     <button class="nav-btn" id="dnext">›</button>
+    <span id="dow" style="color:var(--ink);font-size:13px;font-weight:600;min-width:34px;margin-left:2px"></span>
     <button class="play" id="play" title="Animate through dates">▶</button>
   </div>
   <input type="range" id="slider" min="0" max="0" value="0">
@@ -131,13 +131,13 @@ let ALL=[],MARKERS={},DATES=[],curIdx=0,idxByDay={},selected=null,timer=null;
 fetch('data/stations.json').then(r=>r.json()).then(data=>{
   document.getElementById('gen').textContent='updated '+(data.generated||'').replace('T',' ').slice(0,16);
   ALL=data.stations.filter(s=>s.lat!=null&&s.lon!=null);
-  ALL.forEach(s=>{s._by={};(s.day_status||[]).forEach(([d,v,c,h])=>s._by[d]=[v,c,h]);});
+  ALL.forEach(s=>{s._by={};(s.day_status||[]).forEach(([d,v,c,h,p])=>s._by[d]=[v,c,h,p]);});
   const set=new Set();ALL.forEach(s=>(s.day_status||[]).forEach(r=>set.add(r[0])));
   DATES=[...set].sort();DATES.forEach((d,i)=>idxByDay[d]=i);curIdx=DATES.length-1;
   fill('fCounty',[...new Set(ALL.map(s=>s.county).filter(Boolean))].sort(),'All counties');
   fill('fRoute',[...new Set(ALL.map(s=>s.route).filter(Boolean))].sort(),'All routes');
   ALL.forEach(s=>{const m=L.circleMarker([s.lat,s.lon],{radius:8,weight:1.5,color:'#e6edf3',fillOpacity:1});
-    m.on('click',()=>selectStation(s));MARKERS[s.local_id]=m;m.addTo(map);});
+    m.on('click',()=>{selectStation(s);map.setView([s.lat,s.lon],Math.max(map.getZoom(),11));});MARKERS[s.local_id]=m;m.addTo(map);});
   const b=ALL.map(s=>[s.lat,s.lon]);if(b.length)map.fitBounds(b,{padding:[40,40]});
   const sl=document.getElementById('slider');sl.max=DATES.length-1;sl.value=curIdx;
   document.getElementById('date').min=DATES[0];document.getElementById('date').max=DATES[DATES.length-1];
@@ -164,10 +164,11 @@ function render(){
   ALL.forEach(s=>{const m=MARKERS[s.local_id];
     if(!passesFilter(s)){if(map.hasLayer(m))map.removeLayer(m);return;}
     if(!map.hasLayer(m))m.addTo(map);shown++;
-    const rec=s._by[day],code=rec?rec[1]:6,vol=rec?rec[0]:null,hol=rec?rec[2]:0;counts[code]++;
+    const rec=s._by[day],code=rec?rec[1]:6,vol=rec?rec[0]:null,hol=rec?rec[2]:0,p=rec?rec[3]:null;counts[code]++;
     m.setStyle({fillColor:css(SVAR[code])});m.unbindTooltip();
-    m.bindTooltip(`<div class="tt"><b>${s.name}</b><br>${day} · <span class="v">${fmt(vol)}</span> · ${SLABEL[code]}${hol?' · 🎉 Holiday':''}</div>`,{direction:'top',offset:[0,-6]});
-    if(rec&&code!==2&&code!==6)unusual.push({s,code});});
+    const pStr=p!=null?` (${p>0?'+':''}${p}%)`:'';
+    m.bindTooltip(`<div class="tt"><b>${s.name}</b><br>${day} · <span class="v">${fmt(vol)}</span>${pStr} · ${SLABEL[code]}${hol?' · 🎉 Holiday':''}</div>`,{direction:'top',offset:[0,-6]});
+    if(rec&&code!==2&&code!==6)unusual.push({s,code,p});});
   document.getElementById('summary').innerHTML=
     `<span><i style="background:${css('--s4')}"></i><b>${counts[3]+counts[4]}</b> above</span>`+
     `<span><i style="background:${css('--s2')}"></i><b>${counts[2]}</b> typical</span>`+
@@ -177,39 +178,40 @@ function render(){
   if(!selected)showUnusual(unusual,day);
 }
 function showUnusual(list,day){
-  list.sort((a,b)=>Math.abs(b.code-2)-Math.abs(a.code-2));
+  list.sort((a,b)=>Math.abs((b.p??0))-Math.abs((a.p??0)));
   const top=list.slice(0,10),el=document.getElementById('detail');
-  el.innerHTML=`<div class="unusual"><h4>Most unusual · ${day}</h4>`+
+  el.innerHTML=`<div class="unusual"><h4>Biggest changes · ${day}</h4>`+
     (top.length?top.map(u=>`<div class="urow" data-id="${u.s.local_id}">
       <span class="dot" style="background:${css(SVAR[u.code])}"></span>
       <span class="nm">${u.s.name}</span>
-      <span class="pc" style="color:${css(SVAR[u.code])}">${SLABEL[u.code]}</span></div>`).join('')
+      <span class="pc" style="color:${css(SVAR[u.code])}">${u.p!=null?(u.p>0?'+':'')+u.p+'%':SLABEL[u.code]}</span></div>`).join('')
       :'<div class="empty">Every station is near its typical volume for this date.</div>')+'</div>';
   el.querySelectorAll('.urow').forEach(r=>r.onclick=()=>{
     const s=ALL.find(x=>x.local_id===r.dataset.id);selectStation(s);
-    map.setView([s.lat,s.lon],Math.max(map.getZoom(),9));});
+    map.setView([s.lat,s.lon],Math.max(map.getZoom(),11));});
 }
 function selectStation(s){
   selected=s;const day=DATES[curIdx],rec=s._by[day],code=rec?rec[1]:6,color=css(SVAR[code]);
-  const vol=rec?rec[0]:null;
+  const vol=rec?rec[0]:null,hol=rec?rec[2]:0,pTyp=rec?rec[3]:null;
   let cmp='';
   if(vol!=null&&s.base_aadt){const p=(vol-s.base_aadt)/s.base_aadt*100;
     cmp=`· <span class="${p>=0?'up':'down'}">${p>=0?'+':''}${p.toFixed(0)}% vs AADT</span>`;}
+  const typStr=pTyp!=null?` · ${pTyp>0?'+':''}${pTyp}% vs typical`:'';
   document.getElementById('detail').innerHTML=`
-    <div class="back" id="backList">← Most unusual list</div>
+    <div class="back" id="backList">← Back to list</div>
     <div class="st-name">${s.name||s.local_id}</div>
     <div class="st-meta">${s.county?'<b>'+s.county+' County</b> · ':''}${s.route||''}
       ${s.rururb==='U'?'· Urban':s.rururb==='R'?'· Rural':''} · station <b>${s.local_id}</b></div>
     <div class="headline">
       <div class="big" style="color:${color}">${fmt(vol)}</div>
-      <div class="status" style="color:${color}">${SLABEL[code]}</div>
+      <div class="status" style="color:${color}">${SLABEL[code]}${hol?' 🎉':''}</div>
     </div>
     <div class="vs">
-      <div>Date: <span class="num">${day}</span></div>
+      <div>Date: <span class="num">${day}</span>${typStr}</div>
       <div>AADT · ${s.base_year}: <span class="num">${fmt(s.base_aadt)}</span> ${cmp}</div>
       ${s.current_ytd?`<div>${s.current_year} year-to-date est: <span class="num">${fmt(s.current_ytd)}</span></div>`:''}
     </div>
-    <a class="btn" href="station.html?id=${s.local_id}&date=${day}">Explore 15-minute detail →</a>`;
+    <a class="btn" href="station.html?id=${s.local_id}&date=${day}">Explore more data →</a>`;
   document.getElementById('backList').onclick=()=>{selected=null;render();};
 }
 function togglePlay(){const btn=document.getElementById('play');
