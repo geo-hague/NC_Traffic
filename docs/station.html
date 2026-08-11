@@ -131,6 +131,7 @@
   <div class="card">
     <h3>Typical volume · weekday × month</h3>
     <div class="hint">Median daily volume for each weekday and month across all history.</div>
+    <div id="heatToggle" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap"></div>
     <div class="heat" id="heat"></div>
     <div class="heatscale"><span>lighter</span><div class="bar"></div><span>busier</span></div>
   </div>
@@ -368,9 +369,32 @@ function buildHourly(lanes){
   }
   wrap.innerHTML=html+'</tbody></table>';
 }
-function buildHeatmap(){
-  const cells={};DAILY.daily.forEach(r=>{const d=new Date(r.day+'T00:00');
-    const k=r.dow+'_'+d.getMonth();(cells[k]=cells[k]||[]).push(r.volume);});
+function heatSource(dir){
+  // returns {dayISO: volume} for 'Total' or a specific direction
+  if(dir==='Total') return Object.fromEntries(DAILY.daily.map(r=>[r.day,r.volume]));
+  return (DAILY.daily_by_dir||{})[dir]||{};
+}
+function buildHeatmap(dir){
+  dir=dir||'Total';
+  // toggle buttons: Total + each available direction
+  const dirs=Object.keys(DAILY.daily_by_dir||{}).sort();
+  const opts=['Total',...dirs];
+  const tog=document.getElementById('heatToggle');
+  tog.innerHTML=opts.map(o=>{
+    const label=o==='Total'?'Total':(DIR_LABEL[o]||o);
+    const on=o===dir;
+    return `<button class="chip${on?' on':''}" data-dir="${o}">${label}</button>`;
+  }).join('');
+  tog.querySelectorAll('button').forEach(btn=>btn.onclick=()=>buildHeatmap(btn.dataset.dir));
+
+  const src=heatSource(dir);
+  const cells={};
+  Object.entries(src).forEach(([dayISO,vol])=>{const d=new Date(dayISO+'T00:00');
+    const k=d.getDay()+'_'+d.getMonth();  // getDay: 0=Sun
+    // remap to Mon..Sun index used by DOW array
+    const dw=(d.getDay()+6)%7;
+    const kk=dw+'_'+d.getMonth();
+    (cells[kk]=cells[kk]||[]).push(vol);});
   const med=a=>{const s=[...a].sort((x,y)=>x-y);return s[Math.floor(s.length/2)];};
   let lo=Infinity,hi=-Infinity;Object.values(cells).forEach(a=>{const m=med(a);lo=Math.min(lo,m);hi=Math.max(hi,m);});
   const color=v=>{const t=(v-lo)/((hi-lo)||1),stops=[[29,58,82],[47,102,144],[90,169,214],[224,165,59],[224,93,59]];
