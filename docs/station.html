@@ -108,6 +108,19 @@
     <div class="hint" id="profHint"></div>
     <canvas id="profile" height="230"></canvas>
   </div>
+  <div class="card">
+    <h3>Days in context</h3>
+    <div class="hint">Daily totals and intraday profile across a window of days. Slide to scrub; changing the date above re-centers.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
+      <button class="nav-btn" id="ctxPrev">‹</button>
+      <span id="ctxRange" style="font-size:12px;color:var(--ink-dim);font-family:ui-monospace,monospace;min-width:200px;text-align:center"></span>
+      <button class="nav-btn" id="ctxNext">›</button>
+      <button class="nav-btn" id="ctxReset" style="font-size:11px;width:auto;padding:0 10px">recenter</button>
+    </div>
+    <canvas id="ctxDaily" height="150"></canvas>
+    <div class="hint" style="margin-top:14px">Intraday profile, stitched across the window</div>
+    <canvas id="ctxProfile" height="170"></canvas>
+  </div>
   <div class="grid2">
     <div class="card">
       <h3>Peak characteristics</h3>
@@ -158,6 +171,7 @@ const fmt=n=>n==null?'—':Math.round(n).toLocaleString('en-US');
 const hhmm=i=>`${String(Math.floor(i/4)).padStart(2,'0')}:${String((i%4)*15).padStart(2,'0')}`;
 const P=new URLSearchParams(location.search),SID=P.get('id');
 let STATION=null,DAILY=null,MONTHS={},CMP=null,DIRCOLORS={};
+let CTX_CENTER=null,CTX_SIZE=8;   // multi-day context window (independent of main date)
 let HIDDEN=new Set();   // lane keys toggled off in the direction chart
 // shared floating tooltip for chart hovers
 const chartTip=document.createElement('div');
@@ -184,9 +198,12 @@ async function init(){
   for(const el of ['date','cmpDate']){const e=document.getElementById(el);e.min=dates[0];e.max=dates[dates.length-1];}
   const want=P.get('date'); 
   document.getElementById('date').value=(want&&dates.includes(want))?want:dates[dates.length-1];
-  document.getElementById('date').addEventListener('change',render);
+  document.getElementById('date').addEventListener('change',()=>{CTX_CENTER=null;render();});
   document.getElementById('prev').onclick=()=>step(-1);
   document.getElementById('next').onclick=()=>step(1);
+  document.getElementById('ctxPrev').onclick=()=>shiftContext(-1);
+  document.getElementById('ctxNext').onclick=()=>shiftContext(1);
+  document.getElementById('ctxReset').onclick=()=>{CTX_CENTER=null;drawContext();};
   document.getElementById('cmpToggle').onclick=()=>{
     const box=document.getElementById('cmpBox');box.classList.toggle('show');
     document.getElementById('cmpToggle').classList.toggle('on');
@@ -272,9 +289,127 @@ async function render(){
   if(dsLegend) dsLegend.style.display = twoWay ? 'none' : 'flex';
   if(lanes)assignColors(lanes);
   drawProfile(day,lanes,mins);
-  drawDirSplit(twoWay?null:lanes);   // no lane/direction detail on 2-way days
+  drawDirSplit(twoWay?null:lanes,mins);   // no lane/direction detail on 2-way days
   buildMetrics(lanes);
   buildHourly(lanes);
+  drawContext();
+}
+// ===== Multi-day context charts (independent slideable window) =====
+function ctxWindow(){
+  const dates=DAILY.daily.map(r=>r.day).sort();
+  const sel=document.getElementById('date').value;
+  const center=CTX_CENTER||sel;
+  let ci=dates.indexOf(center);
+  if(ci<0){ // center not a data day: nearest
+    ci=dates.findIndex(d=>d>=center); if(ci<0)ci=dates.length-1;
+  }
+  const half=Math.floor(CTX_SIZE/2);
+  let lo=ci-half, hi=ci-half+CTX_SIZE-1;
+  if(lo<0){hi-=lo;lo=0;}
+  if(hi>dates.length-1){lo-=(hi-(dates.length-1));hi=dates.length-1;}
+  lo=Math.max(0,lo);
+  return {dates,win:dates.slice(lo,hi+1),sel};
+}
+function shiftContext(dir){
+  const {dates}=ctxWindow();
+  const cur=CTX_CENTER||document.getElementById('date').value;
+  let ci=dates.indexOf(cur); if(ci<0)ci=dates.length-1;
+  const ni=Math.max(0,Math.min(dates.length-1,ci+dir*Math.max(1,Math.floor(CTX_SIZE/2))));
+  CTX_CENTER=dates[ni];
+  drawContext();
+}
+async function drawContext(){
+  const {win,sel}=ctxWindow();
+  document.getElementById('ctxRange').textContent =
+    win.length?`${win[0]} → ${win[win.length-1]}  (${win.length} days)`:'—';
+  drawCtxDaily(win,sel);
+  await drawCtxProfile(win,sel);
+}
+function drawCtxDaily(win,sel){
+  const cv=document.getElementById('ctxDaily'),ctx=setup(cv);
+  const rows=win.map(d=>DAILY.daily.find(r=>r.day===d)).filter(Boolean);
+  if(!rows.length){noData(ctx,cv);return;}
+  const W=cv.clientWidth,H=150,pad={l:48,r:12,t:12,b:30};
+  const mx=Math.max(...rows.map(r=>r.volume||0),1);
+  const n=rows.length,bw=(W-pad.l-pad.r)/n;
+  const y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+  // gridlines
+  ctx.strokeStyle=css('--line');ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';ctx.lineWidth=1;
+  for(let g=0;g<=3;g++){const v=mx*g/3,yy=y(v);ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillText(fmt(v),4,yy+3);}
+  rows.forEach((r,i)=>{
+    const bx=pad.l+i*bw+bw*0.15,bwid=bw*0.7;
+    const isSel=r.day===sel;
+    ctx.fillStyle=isSel?css('--primary'):css('--s6');
+    ctx.fillRect(bx,y(r.volume),bwid,y(0)-y(r.volume));
+    ctx.fillStyle=isSel?css('--primary'):css('--ink-faint');
+    ctx.font=isSel?'bold 10px ui-monospace,monospace':'10px ui-monospace,monospace';
+    ctx.textAlign='center';
+    ctx.fillText(DOW[r.dow]||'',bx+bwid/2,H-16);
+    ctx.fillText(r.day.slice(5),bx+bwid/2,H-4);
+    ctx.textAlign='left';
+  });
+  cv.onmousemove=e=>{const rect=cv.getBoundingClientRect();
+    const rel=(e.clientX-rect.left)/rect.width*W;
+    const i=Math.floor((rel-pad.l)/bw);
+    if(i<0||i>=rows.length){hideTip();return;}
+    const r=rows[i];
+    showTip(e.clientX,e.clientY,`<b>${DOW[r.dow]} ${r.day}</b> · ${fmt(r.volume)}`);};
+  cv.onmouseleave=hideTip;
+}
+async function drawCtxProfile(win,sel){
+  const cv=document.getElementById('ctxProfile'),ctx=setup(cv);
+  // load each day's totals + granularity
+  const series=[];
+  for(const d of win){
+    const lanes=await loadDay(d); const mins=await dayMinutes(d);
+    if(!lanes){series.push({day:d,pts:[],mins});continue;}
+    const tot=totals(lanes);
+    const pts = mins===60 ? Array.from({length:24},(_,k)=>tot[k*4]||0) : tot;
+    series.push({day:d,pts,mins});
+  }
+  const W=cv.clientWidth,H=170,pad={l:48,r:12,t:12,b:22};
+  const allv=series.flatMap(s=>s.pts).filter(v=>v!=null);
+  const mx=Math.max(...allv,1);
+  const totalPts=series.reduce((a,s)=>a+(s.pts.length||1),0);
+  let gi=0;const xstep=(W-pad.l-pad.r)/Math.max(1,totalPts-1);
+  const y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+  // grid
+  ctx.strokeStyle=css('--line');ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';ctx.lineWidth=1;
+  for(let g=0;g<=3;g++){const v=mx*g/3,yy=y(v);ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillText(fmt(v),4,yy+3);}
+  // day separators + labels + highlight selected day's segment
+  let idx=0;
+  series.forEach(s=>{
+    const segStart=idx, segLen=s.pts.length||1;
+    const x0=pad.l+segStart*xstep, x1=pad.l+(segStart+segLen-1)*xstep;
+    if(s.day===sel){ctx.fillStyle=css('--primary')+'18';ctx.fillRect(x0,pad.t,x1-x0,H-pad.t-pad.b);}
+    ctx.strokeStyle=css('--line');ctx.beginPath();ctx.moveTo(x0,pad.t);ctx.lineTo(x0,H-pad.b);ctx.stroke();
+    ctx.fillStyle=s.day===sel?css('--primary'):css('--ink-faint');
+    ctx.font=s.day===sel?'bold 9px ui-monospace,monospace':'9px ui-monospace,monospace';
+    ctx.textAlign='center';ctx.fillText(DOW[(DAILY.daily.find(r=>r.day===s.day)||{}).dow]||'',(x0+x1)/2,H-6);ctx.textAlign='left';
+    idx+=segLen;
+  });
+  // the stitched line
+  ctx.beginPath();let started=false;idx=0;
+  series.forEach(s=>{
+    s.pts.forEach(v=>{const xx=pad.l+idx*xstep;
+      if(v==null){started=false;}else if(!started){ctx.moveTo(xx,y(v));started=true;}else ctx.lineTo(xx,y(v));
+      idx++;});
+    if(!s.pts.length)idx++;
+  });
+  ctx.strokeStyle=css('--primary');ctx.lineWidth=1.6;ctx.stroke();
+  cv.onmousemove=e=>{const rect=cv.getBoundingClientRect();
+    const rel=(e.clientX-rect.left)/rect.width*W;
+    const gpos=Math.round((rel-pad.l)/xstep);
+    // find which day/slot
+    let acc=0;
+    for(const s of series){const len=s.pts.length||1;
+      if(gpos<acc+len){const k=gpos-acc;const v=s.pts[k];
+        if(v==null){hideTip();return;}
+        const lbl=s.mins===60?String(k).padStart(2,'0')+':00':hhmm(k);
+        showTip(e.clientX,e.clientY,`<b>${s.day}</b> ${lbl} · ${fmt(v)}`);return;}
+      acc+=len;}
+    hideTip();};
+  cv.onmouseleave=hideTip;
 }
 function drawProfile(day,lanes,mins){
   mins=mins||15;
@@ -317,45 +452,48 @@ function drawProfile(day,lanes,mins){
     showTip(e.clientX,e.clientY,h);};
   cv.onmouseleave=hideTip;
 }
-function drawDirSplit(lanes){
+function drawDirSplit(lanes,mins){
+  mins=mins||15;
   const cv=document.getElementById('dirsplit'),ctx=setup(cv),legend=document.getElementById('laneLegend');legend.innerHTML='';
   if(!lanes){noData(ctx,cv);return;}
+  const hourly=mins===60,N=hourly?24:96;
+  const at=(arr,i)=>hourly?(arr[i*4]||0):(arr[i]||0);   // read value at plot-index i
   const allKeys=Object.keys(lanes).sort();
   const dirs=[...new Set(allKeys.map(k=>k.split('|')[0]))];
   const W=cv.clientWidth,H=200,pad={l:48,r:12,t:10,b:22};
   const vis=k=>!HIDDEN.has(k);
-  // scale to max stacked single-direction volume (visible lanes only)
   let mx=1;
   dirs.forEach(d=>{const keys=allKeys.filter(k=>k.startsWith(d+'|')&&vis(k));
-    for(let i=0;i<96;i++)mx=Math.max(mx,keys.reduce((s,k)=>s+(lanes[k][i]||0),0));});
-  const x=i=>pad.l+i*(W-pad.l-pad.r)/95,y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+    for(let i=0;i<N;i++)mx=Math.max(mx,keys.reduce((s,k)=>s+at(lanes[k],i),0));});
+  const x=i=>pad.l+i*(W-pad.l-pad.r)/(N-1),y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
   grid(ctx,W,H,pad,mx);
   dirs.forEach(d=>{
     const keys=allKeys.filter(k=>k.startsWith(d+'|')&&vis(k));
-    const base=new Array(96).fill(0);
+    const base=new Array(N).fill(0);
     keys.forEach(k=>{const ln=k.split('|')[1],col=css(DIRCOLORS[d][ln]||'--s2');
       ctx.beginPath();
-      for(let i=0;i<96;i++)ctx.lineTo(x(i),y(base[i]+(lanes[k][i]||0)));
-      for(let i=95;i>=0;i--)ctx.lineTo(x(i),y(base[i]));
+      for(let i=0;i<N;i++)ctx.lineTo(x(i),y(base[i]+at(lanes[k],i)));
+      for(let i=N-1;i>=0;i--)ctx.lineTo(x(i),y(base[i]));
       ctx.closePath();ctx.fillStyle=col+'bb';ctx.fill();
-      for(let i=0;i<96;i++)base[i]+=(lanes[k][i]||0);});
+      for(let i=0;i<N;i++)base[i]+=at(lanes[k],i);});
   });
-  // clickable legend (all lanes, greyed when hidden)
   allKeys.forEach(k=>{const[d,ln]=k.split('|'),col=css(DIRCOLORS[d]?.[ln]||'--s2');
     const sp=document.createElement('span');
     sp.style.cssText='cursor:pointer;'+(vis(k)?'':'opacity:.35');
-    sp.innerHTML=`<span class="swatch" style="background:${col}"></span>${DIR_LABEL[d]||d} L${ln}`;
-    sp.onclick=()=>{if(HIDDEN.has(k))HIDDEN.delete(k);else HIDDEN.add(k);drawDirSplit(lanes);};
+    const laneLabel=ln==='0'||ln==='ALL'?'':' L'+ln;
+    sp.innerHTML=`<span class="swatch" style="background:${col}"></span>${DIR_LABEL[d]||d}${laneLabel}`;
+    sp.onclick=()=>{if(HIDDEN.has(k))HIDDEN.delete(k);else HIDDEN.add(k);drawDirSplit(lanes,mins);};
     legend.appendChild(sp);});
-  hourLabels(ctx,H,pad,x);
-  // hover: show each visible lane's value at that slot
+  hourLabels(ctx,H,pad,x,N);
   cv.onmousemove=e=>{const r=cv.getBoundingClientRect();
     const rel=(e.clientX-r.left)/(r.width)*W;
-    let i=Math.round((rel-pad.l)/((W-pad.l-pad.r)/95));
-    if(i<0||i>95){hideTip();return;}
-    let rows=`<b>${hhmm(i)}</b>`;
+    let i=Math.round((rel-pad.l)/((W-pad.l-pad.r)/(N-1)));
+    if(i<0||i>N-1){hideTip();return;}
+    const lbl=hourly?String(i).padStart(2,'0')+':00':hhmm(i);
+    let rows=`<b>${lbl}</b>`;
     allKeys.filter(vis).forEach(k=>{const[d,ln]=k.split('|');
-      rows+=`<br>${(DIR_LABEL[d]||d)} L${ln}: ${fmt(lanes[k][i]||0)}`;});
+      const laneLabel=ln==='0'||ln==='ALL'?'':' L'+ln;
+      rows+=`<br>${(DIR_LABEL[d]||d)}${laneLabel}: ${fmt(at(lanes[k],i))}`;});
     showTip(e.clientX,e.clientY,rows);};
   cv.onmouseleave=hideTip;
 }
