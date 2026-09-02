@@ -93,6 +93,7 @@
     <button class="nav-btn" id="prev">‹</button>
     <label>Date</label><input type="date" id="date">
     <button class="nav-btn" id="next">›</button>
+    <span id="dow" style="color:var(--ink);font-size:13px;font-weight:600;min-width:34px;margin-left:2px"></span>
     <button class="chip" id="cmpToggle">+ Compare a date</button>
     <div class="cmpbox" id="cmpBox"><span class="sw">vs</span>
       <input type="date" id="cmpDate"><button class="nav-btn" id="cmpClear" title="Clear">×</button></div>
@@ -140,6 +141,15 @@
       <canvas id="dirsplit" height="200"></canvas>
       <div class="lane-legend" id="laneLegend"></div>
     </div>
+    <div class="card">
+      <h3>Lane totals <span id="laneTotalsDay" style="color:var(--ink-dim);font-weight:400"></span></h3>
+      <div id="laneTotalsHeader" style="display:flex;justify-content:space-between;
+        font-size:12px;font-weight:600;color:var(--ink-dim);margin:2px 0 8px"></div>
+      <div id="laneTotalsNote" style="display:none;color:var(--ink-dim);font-size:13px;
+        background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+        padding:12px 14px;line-height:1.5"></div>
+      <canvas id="laneTotals" height="180"></canvas>
+    </div>
   </div>
   <div class="card">
     <h3>Typical volume · weekday × month</h3>
@@ -157,6 +167,7 @@
 <script>
 const DIR_LABEL={POS:'Inner loop',NEG:'Outer loop',EB:'Eastbound',WB:'Westbound',
   NB:'Northbound',SB:'Southbound','2WAY':'Both directions'};
+const DIR_SHORT={POS:'IN',NEG:'OUT',EB:'EB',WB:'WB',NB:'NB',SB:'SB','2WAY':'2W'};
 const isTwoWayOnly = lanes => lanes && Object.keys(lanes).length===1
   && Object.keys(lanes)[0]==='2WAY|ALL';
 // lane color: first direction encountered uses the A (blue) family, second uses B (amber)
@@ -265,6 +276,8 @@ function assignColors(lanes){ // map each direction to a color family
 
 async function render(){
   const day=document.getElementById('date').value;
+  const wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(day+'T00:00').getDay()];
+  const dowEl=document.getElementById('dow'); if(dowEl) dowEl.textContent=wd;
   const row=DAILY.daily.find(r=>r.day===day),st=STATUS[row?.status]||STATUS.unknown;
   let aadtCmp='';
   if(row&&DAILY.base_aadt){const p=(row.volume-DAILY.base_aadt)/DAILY.base_aadt*100;
@@ -290,6 +303,7 @@ async function render(){
   if(lanes)assignColors(lanes);
   drawProfile(day,lanes,mins);
   drawDirSplit(twoWay?null:lanes,mins);   // no lane/direction detail on 2-way days
+  drawLaneTotals(twoWay?null:lanes,day);
   buildMetrics(lanes);
   buildHourly(lanes);
   drawContext();
@@ -495,6 +509,86 @@ function drawDirSplit(lanes,mins){
       const laneLabel=ln==='0'||ln==='ALL'?'':' L'+ln;
       rows+=`<br>${(DIR_LABEL[d]||d)}${laneLabel}: ${fmt(at(lanes[k],i))}`;});
     showTip(e.clientX,e.clientY,rows);};
+  cv.onmouseleave=hideTip;
+}
+// Order lanes left-to-right like a top-down road cross-section:
+// SB/WB/outer-loop on the left (curb lane at the outer edge, rising toward
+// the median as you move right), NB/EB/inner-loop on the right (mirrored, so
+// the two median lanes meet in the middle). Falls back gracefully for 2WAY
+// or TMAS directional-total (lane "0"/"ALL") days.
+const LEFT_DIRS=new Set(['SB','WB','NEG']), RIGHT_DIRS=new Set(['NB','EB','POS']);
+function orderedLaneKeys(lanes){
+  const allKeys=Object.keys(lanes);
+  const byDir={};
+  allKeys.forEach(k=>{const[d,ln]=k.split('|');(byDir[d]=byDir[d]||[]).push(ln);});
+  const leftDir=Object.keys(byDir).find(d=>LEFT_DIRS.has(d));
+  const rightDir=Object.keys(byDir).find(d=>RIGHT_DIRS.has(d));
+  const numOf=ln=>{const n=parseInt(ln,10);return isNaN(n)?0:n;};
+  const seq=[];
+  if(leftDir) byDir[leftDir].slice().sort((a,b)=>numOf(a)-numOf(b))
+    .forEach(ln=>seq.push(leftDir+'|'+ln));
+  if(rightDir) byDir[rightDir].slice().sort((a,b)=>numOf(b)-numOf(a))
+    .forEach(ln=>seq.push(rightDir+'|'+ln));
+  Object.keys(byDir).forEach(d=>{if(d!==leftDir&&d!==rightDir)
+    byDir[d].forEach(ln=>seq.push(d+'|'+ln));});
+  return seq;
+}
+function drawLaneTotals(lanes,day){
+  const cv=document.getElementById('laneTotals'),ctx=setup(cv);
+  const note=document.getElementById('laneTotalsNote');
+  const dayLbl=document.getElementById('laneTotalsDay');
+  const header=document.getElementById('laneTotalsHeader');
+  dayLbl.textContent=day?('· '+day):'';
+  if(!lanes){note.style.display='block';note.textContent='No detail published for this date.';
+    cv.style.display='none';header.innerHTML='';return;}
+  const keys=orderedLaneKeys(lanes);
+  const dirsPresent=[...new Set(keys.map(k=>k.split('|')[0]))];
+  const leftD=dirsPresent.find(d=>LEFT_DIRS.has(d));
+  const rightD=dirsPresent.find(d=>RIGHT_DIRS.has(d));
+  header.innerHTML = (leftD||rightD)
+    ? `<span>${leftD?(DIR_LABEL[leftD]||leftD):''}</span><span>${rightD?(DIR_LABEL[rightD]||rightD):''}</span>`
+    : `<span>${DIR_LABEL[dirsPresent[0]]||dirsPresent[0]||''}</span>`;
+  const sums=keys.map(k=>(lanes[k]||[]).reduce((s,v)=>s+(v||0),0));
+  const grand=sums.reduce((s,v)=>s+v,0);
+  const perLane=keys.every(k=>{const[,ln]=k.split('|');return ln==='0'||ln==='ALL';});
+  if(perLane&&keys.length<=2){
+    note.style.display='block';
+    note.textContent='This data source reports directional totals only — no per-lane breakdown is available for this date.';
+  } else { note.style.display='none'; }
+  cv.style.display='block';
+  const W=cv.clientWidth,H=180,pad={l:48,r:12,t:16,b:34};
+  const mx=Math.max(...sums,1);
+  const n=keys.length||1,bw=(W-pad.l-pad.r)/n;
+  const y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+  ctx.strokeStyle=css('--line');ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';ctx.lineWidth=1;
+  for(let g=0;g<=3;g++){const v=mx*g/3,yy=y(v);ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillText(fmt(v),4,yy+3);}
+  // median divider between the two direction groups, if both present
+  const leftCount=keys.filter(k=>LEFT_DIRS.has(k.split('|')[0])).length;
+  if(leftCount>0&&leftCount<keys.length){
+    const xm=pad.l+leftCount*bw;
+    ctx.strokeStyle=css('--line');ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(xm,pad.t);ctx.lineTo(xm,H-pad.b);ctx.stroke();ctx.setLineDash([]);
+  }
+  keys.forEach((k,i)=>{
+    const[d,ln]=k.split('|'),col=css(DIRCOLORS[d]?.[ln]||'--s2');
+    const bx=pad.l+i*bw+bw*0.15,bwid=bw*0.7,v=sums[i];
+    ctx.fillStyle=col;ctx.fillRect(bx,y(v),bwid,y(0)-y(v));
+    const pct=grand?((v/grand)*100):0;
+    ctx.fillStyle=css('--ink');ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';
+    ctx.fillText(pct.toFixed(0)+'%',bx+bwid/2,y(v)-6);
+    ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';
+    const laneLabel=ln==='0'||ln==='ALL'?'':'L'+ln;
+    ctx.fillText((DIR_SHORT[d]||d)+(laneLabel?' '+laneLabel:''),bx+bwid/2,H-20);
+    ctx.fillText(fmt(v),bx+bwid/2,H-8);
+    ctx.textAlign='left';
+  });
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();
+    const rel=(e.clientX-r.left)/(r.width)*W;
+    const i=Math.floor((rel-pad.l)/bw);
+    if(i<0||i>=keys.length){hideTip();return;}
+    const[d,ln]=keys[i].split('|'),v=sums[i],pct=grand?((v/grand)*100):0;
+    const laneLabel=ln==='0'||ln==='ALL'?'':' lane '+ln;
+    showTip(e.clientX,e.clientY,`<b>${DIR_LABEL[d]||d}${laneLabel}</b> · ${fmt(v)} (${pct.toFixed(1)}%)`);};
   cv.onmouseleave=hideTip;
 }
 function buildMetrics(lanes){

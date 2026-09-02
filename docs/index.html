@@ -123,7 +123,7 @@ const SVAR=['--s0','--s1','--s2','--s3','--s4','--s5','--s6'];
 const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const fmt=n=>n==null?'—':n.toLocaleString('en-US');
 const map=L.map('map',{zoomControl:true,attributionControl:false}).setView([35.5,-79.2],7);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=cb1_2bv5_1_b89ed0565454b10cc432d585',{maxZoom:19,subdomains:'abcd'}).addTo(map);
 const legend=document.getElementById('legend');
 [4,3,2,1,0,5,6].forEach(k=>{const s=document.createElement('span');
   s.innerHTML=`<span class="dot" style="background:${css(SVAR[k])}"></span>${SLABEL[k]}`;legend.appendChild(s);});
