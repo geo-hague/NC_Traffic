@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Station detail · NC Count Stations</title>
+<style>
+  :root{
+    --ground:#12171d;--panel:#1a2129;--panel-2:#212a34;--line:#2c3743;
+    --ink:#e6edf3;--ink-dim:#8b97a4;--ink-faint:#5b6672;
+    --s0:#3b82c4;--s1:#5aa9d6;--s2:#5b6672;--s3:#e0a53b;--s4:#e05d3b;--s5:#9b7fd4;--s6:#39424d;
+    --primary:#5aa9d6;--compare:#e0a53b;
+    /* two direction families, shaded by lane */
+    --dA1:#7cc4ec;--dA2:#5aa9d6;--dA3:#3b82c4;--dA4:#2a5f8f;
+    --dB1:#f0c46a;--dB2:#e0a53b;--dB3:#c9822a;--dB4:#a5641c;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--ground);color:var(--ink);min-height:100vh;
+    font-family:"Barlow Semi Condensed",-apple-system,system-ui,sans-serif}
+  header{display:flex;align-items:baseline;gap:14px;padding:14px 22px;
+    border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+  header a.back{color:var(--primary);text-decoration:none;font-size:13px}
+  header a.back:hover{text-decoration:underline}
+  header h1{margin:0;font-size:19px;font-weight:600;letter-spacing:.04em}
+  header .meta{color:var(--ink-dim);font-size:12.5px}
+  header .meta b{color:var(--ink)}
+  .wrap{max-width:1060px;margin:0 auto;padding:22px}
+  .controls{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap}
+  .controls label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint)}
+  select,input[type=date]{background:var(--panel-2);color:var(--ink);border:1px solid var(--line);
+    border-radius:6px;padding:7px 10px;font-family:inherit;font-size:14px}
+  .nav-btn{background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    border-radius:6px;width:34px;height:34px;cursor:pointer;font-size:16px}
+  .nav-btn:hover{background:var(--line)}
+  .chip{font-size:11px;padding:6px 11px;border-radius:14px;border:1px solid var(--line);
+    background:var(--panel-2);color:var(--ink-dim);cursor:pointer}
+  .chip.on{background:var(--compare);color:#0d1116;border-color:var(--compare);font-weight:600}
+  .cmpbox{display:none;align-items:center;gap:8px}.cmpbox.show{display:flex}
+  .cmpbox .sw{color:var(--compare);font-size:12px;font-weight:600}
+  .headline{display:flex;gap:24px;align-items:flex-end;padding:16px 0 18px;
+    border-bottom:1px solid var(--line);margin-bottom:20px;flex-wrap:wrap}
+  .headline .lab{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);margin-bottom:5px}
+  .headline .big{font-size:42px;font-weight:600;line-height:.9;font-family:ui-monospace,monospace}
+  .headline .status{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding-bottom:8px}
+  .headline .col .v{font-family:ui-monospace,monospace;font-size:19px}
+  .headline .up{color:var(--s3)}.headline .down{color:var(--s1)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:20px}
+  .card h3{margin:0 0 3px;font-size:13px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+  .card .hint{color:var(--ink-faint);font-size:12px;margin-bottom:14px}
+  canvas{width:100%;display:block}
+  .lane-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--ink-dim)}
+  .lane-legend span{display:flex;align-items:center;gap:6px}
+  .swatch{width:12px;height:3px;border-radius:2px}
+  .metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .metric{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .metric .k{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint)}
+  .metric .val{font-size:24px;font-weight:600;font-family:ui-monospace,monospace;margin-top:3px}
+  .metric .sub{font-size:11.5px;color:var(--ink-dim);margin-top:2px}
+  table.hrs{width:100%;border-collapse:collapse;font-size:12.5px;font-family:ui-monospace,monospace}
+  table.hrs th{color:var(--ink-faint);font-weight:500;text-align:right;padding:6px 8px;
+    text-transform:uppercase;letter-spacing:.05em;font-size:10px;font-family:"Barlow Semi Condensed",sans-serif}
+  table.hrs th:first-child,table.hrs td:first-child{text-align:left}
+  table.hrs td{padding:4px 8px;border-top:1px solid var(--line);text-align:right}
+  table.hrs .dirtot{color:var(--ink);background:var(--panel-2)}
+  table.hrs .grand{font-weight:600}
+  table.hrs tr:hover td{background:var(--panel-2)}
+  .heat{display:grid;grid-template-columns:auto repeat(12,1fr);gap:2px;font-size:10px}
+  .heat .hlab,.heat .rlab{color:var(--ink-faint);display:flex;align-items:center;justify-content:center;padding:2px}
+  .heat .rlab{color:var(--ink-dim);justify-content:flex-end;padding-right:6px}
+  .heat .cell{aspect-ratio:1.4;border-radius:2px}
+  .heatscale{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11px;color:var(--ink-dim)}
+  .heatscale .bar{height:10px;width:120px;border-radius:3px;background:linear-gradient(90deg,#1d3a52,#2f6690,#5aa9d6,#e0a53b,#e05d3b)}
+  .msg{color:var(--ink-faint);font-size:13.5px;padding:26px 0;text-align:center}
+  .facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+  .fact{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:11px 13px}
+  .fact .k{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint)}
+  .fact .v{font-size:16px;font-weight:600;margin-top:3px}
+  .fact .v small{font-weight:400;color:var(--ink-dim);font-size:12px;font-family:ui-monospace,monospace}
+  .fact.hi .v{color:var(--s3)}.fact.lo .v{color:var(--s1)}
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="index.html">← Map</a>
+  <h1 id="stName">Station</h1>
+  <span class="meta" id="stMeta"></span>
+</header>
+<div class="wrap">
+  <div class="controls">
+    <button class="nav-btn" id="prev">‹</button>
+    <label>Date</label><input type="date" id="date">
+    <button class="nav-btn" id="next">›</button>
+    <span id="dow" style="color:var(--ink);font-size:13px;font-weight:600;min-width:34px;margin-left:2px"></span>
+    <button class="chip" id="cmpToggle">+ Compare a date</button>
+    <div class="cmpbox" id="cmpBox"><span class="sw">vs</span>
+      <input type="date" id="cmpDate"><button class="nav-btn" id="cmpClear" title="Clear">×</button></div>
+  </div>
+  <div class="headline" id="headline"></div>
+  <div class="card">
+    <h3>Station at a glance</h3>
+    <div class="hint">Patterns across all available history</div>
+    <div id="facts"></div>
+  </div>
+  <div class="card">
+    <h3>15-minute profile</h3>
+    <div class="hint" id="profHint"></div>
+    <canvas id="profile" height="230"></canvas>
+  </div>
+  <div class="card">
+    <h3>Days in context</h3>
+    <div class="hint">Daily totals and intraday profile across a window of days. Slide to scrub; changing the date above re-centers.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
+      <button class="nav-btn" id="ctxPrev">‹</button>
+      <span id="ctxRange" style="font-size:12px;color:var(--ink-dim);font-family:ui-monospace,monospace;min-width:200px;text-align:center"></span>
+      <button class="nav-btn" id="ctxNext">›</button>
+      <button class="nav-btn" id="ctxReset" style="font-size:11px;width:auto;padding:0 10px">recenter</button>
+    </div>
+    <canvas id="ctxDaily" height="150"></canvas>
+    <div class="hint" style="margin-top:14px">Intraday profile, stitched across the window</div>
+    <canvas id="ctxProfile" height="170"></canvas>
+  </div>
+  <div class="grid2">
+    <div class="card">
+      <h3>Peak characteristics</h3>
+      <div class="hint">Derived from the 15-minute data for the selected day</div>
+      <div class="metrics" id="metrics"></div>
+    </div>
+    <div class="card">
+      <h3>By direction &amp; lane</h3>
+      <div class="hint">Two directions plotted separately; lanes stacked within each</div>
+      <div id="twowayNote" style="display:none;color:var(--ink-dim);font-size:13px;
+        background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+        padding:12px 14px;line-height:1.5">
+        This day was reported as a <b>two-way total only</b> — the portal has no
+        per-lane or per-direction breakdown for it (common on holidays). The
+        volume above is the combined total for both directions.
+      </div>
+      <canvas id="dirsplit" height="200"></canvas>
+      <div class="lane-legend" id="laneLegend"></div>
+    </div>
+    <div class="card">
+      <h3>Lane totals <span id="laneTotalsDay" style="color:var(--ink-dim);font-weight:400"></span></h3>
+      <div id="laneTotalsHeader" style="display:flex;justify-content:space-between;
+        font-size:12px;font-weight:600;color:var(--ink-dim);margin:2px 0 8px"></div>
+      <div id="laneTotalsNote" style="display:none;color:var(--ink-dim);font-size:13px;
+        background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+        padding:12px 14px;line-height:1.5"></div>
+      <canvas id="laneTotals" height="180"></canvas>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Typical volume · weekday × month</h3>
+    <div class="hint">Median daily volume for each weekday and month across all history.</div>
+    <div id="heatToggle" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap"></div>
+    <div class="heat" id="heat"></div>
+    <div class="heatscale"><span>lighter</span><div class="bar"></div><span>busier</span></div>
+  </div>
+  <div class="card">
+    <h3>Hourly totals</h3>
+    <div class="hint">Four 15-minute intervals summed per hour, with direction subtotals</div>
+    <div id="hourlyWrap"></div>
+  </div>
+</div>
+<script>
+const DIR_LABEL={POS:'Inner loop',NEG:'Outer loop',EB:'Eastbound',WB:'Westbound',
+  NB:'Northbound',SB:'Southbound','2WAY':'Both directions'};
+const DIR_SHORT={POS:'IN',NEG:'OUT',EB:'EB',WB:'WB',NB:'NB',SB:'SB','2WAY':'2W'};
+const isTwoWayOnly = lanes => lanes && Object.keys(lanes).length===1
+  && Object.keys(lanes)[0]==='2WAY|ALL';
+// lane color: first direction encountered uses the A (blue) family, second uses B (amber)
+const A_FAM=['--dA1','--dA2','--dA3','--dA4'], B_FAM=['--dB1','--dB2','--dB3','--dB4'];
+const STATUS={very_light:{c:'--s0',label:'Well below'},light:{c:'--s1',label:'Below'},
+  typical:{c:'--s2',label:'Typical'},busy:{c:'--s3',label:'Above'},
+  very_busy:{c:'--s4',label:'Well above'},holiday:{c:'--s5',label:'Holiday'},unknown:{c:'--s6',label:'No baseline'}};
+const DOW=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const fmt=n=>n==null?'—':Math.round(n).toLocaleString('en-US');
+const hhmm=i=>`${String(Math.floor(i/4)).padStart(2,'0')}:${String((i%4)*15).padStart(2,'0')}`;
+const P=new URLSearchParams(location.search),SID=P.get('id');
+let STATION=null,DAILY=null,MONTHS={},CMP=null,DIRCOLORS={};
+let CTX_CENTER=null,CTX_SIZE=8;   // multi-day context window (independent of main date)
+let HIDDEN=new Set();   // lane keys toggled off in the direction chart
+// shared floating tooltip for chart hovers
+const chartTip=document.createElement('div');
+chartTip.style.cssText='position:fixed;pointer-events:none;z-index:50;display:none;'+
+  'background:#0d1116;border:1px solid var(--line);border-radius:6px;padding:6px 9px;'+
+  'font-size:12px;font-family:ui-monospace,monospace;color:var(--ink);white-space:nowrap';
+document.body.appendChild(chartTip);
+function showTip(px,py,html){chartTip.innerHTML=html;chartTip.style.display='block';
+  chartTip.style.left=(px+14)+'px';chartTip.style.top=(py+14)+'px';}
+function hideTip(){chartTip.style.display='none';}
+
+if(!SID)document.body.innerHTML='<p class="msg">No station id. <a href="index.html">Back to map</a>.</p>';
+else init();
+
+async function init(){
+  const s=await fetch('data/stations.json').then(r=>r.json());
+  STATION=s.stations.find(x=>x.local_id===SID)||{local_id:SID};
+  DAILY=await fetch(`data/daily/${SID}.json`).then(r=>r.json());
+  document.getElementById('stName').textContent=STATION.name||SID;
+  document.getElementById('stMeta').innerHTML=
+    (STATION.county?`<b>${STATION.county} County</b> · `:'')+(STATION.route||'')+
+    ` · station <b>${SID}</b> · ${DAILY.daily.length} days`;
+  const dates=DAILY.daily.map(r=>r.day).sort();
+  for(const el of ['date','cmpDate']){const e=document.getElementById(el);e.min=dates[0];e.max=dates[dates.length-1];}
+  const want=P.get('date'); 
+  document.getElementById('date').value=(want&&dates.includes(want))?want:dates[dates.length-1];
+  document.getElementById('date').addEventListener('change',()=>{CTX_CENTER=null;render();});
+  document.getElementById('prev').onclick=()=>step(-1);
+  document.getElementById('next').onclick=()=>step(1);
+  document.getElementById('ctxPrev').onclick=()=>shiftContext(-1);
+  document.getElementById('ctxNext').onclick=()=>shiftContext(1);
+  document.getElementById('ctxReset').onclick=()=>{CTX_CENTER=null;drawContext();};
+  document.getElementById('cmpToggle').onclick=()=>{
+    const box=document.getElementById('cmpBox');box.classList.toggle('show');
+    document.getElementById('cmpToggle').classList.toggle('on');
+    if(!box.classList.contains('show')){CMP=null;render();}};
+  document.getElementById('cmpDate').addEventListener('change',e=>loadDay(e.target.value).then(d=>{CMP={day:e.target.value,lanes:d};render();}));
+  document.getElementById('cmpClear').onclick=()=>{CMP=null;document.getElementById('cmpDate').value='';render();};
+  buildHeatmap();buildFacts();render();
+}
+function buildFacts(){
+  const s=DAILY.stats||{}, el=document.getElementById('facts');
+  const dv=(k,v)=>`<div class="fact"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  const dvc=(cls,k,v)=>`<div class="fact ${cls}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  let h='<div class="facts">';
+  if(s.busiest_dow) h+=dv('Busiest day of week', s.busiest_dow);
+  if(s.slowest_dow) h+=dv('Slowest day of week', s.slowest_dow);
+  if(s.busiest_month) h+=dv('Busiest month', s.busiest_month);
+  if(s.slowest_month) h+=dv('Slowest month', s.slowest_month);
+  if(s.busiest_hour) h+=dv('Busiest hour', s.busiest_hour);
+  if(s.slowest_hour) h+=dv('Slowest hour', s.slowest_hour);
+  if(s.dir_split){
+    const parts=Object.entries(s.dir_split).map(([d,p])=>`${(DIR_LABEL[d]||d)} ${p}%`).join(' · ');
+    h+=dv('Directional split', parts);
+  }
+  if(s.am_peak_dir&&s.pm_peak_dir){
+    h+=dv('Commute flow', `AM → ${DIR_LABEL[s.am_peak_dir]||s.am_peak_dir}<br>`+
+      `<span style="font-size:14px">PM → ${DIR_LABEL[s.pm_peak_dir]||s.pm_peak_dir}</span>`);
+  }
+  // high/low days per year
+  const yr=(label,hl)=>{
+    if(!hl) return '';
+    let o='';
+    o+=dvc('hi',`Highest day · ${label}`,
+      `${fmt(hl.high.volume)}<br><small>${hl.high.day} · ${hl.high.pct_aadt}% of AADT</small>`);
+    o+=dvc('lo',`Lowest day · ${label}`,
+      `${fmt(hl.low.volume)}<br><small>${hl.low.day} · ${hl.low.pct_aadt}% of AADT</small>`);
+    return o;
+  };
+  h+=yr(s.base_year, s.base_hilo);
+  h+=yr(s.current_year, s.current_hilo);
+  h+='</div>';
+  el.innerHTML=h;
+}
+function step(dir){const dates=DAILY.daily.map(r=>r.day).sort();
+  const i=dates.indexOf(document.getElementById('date').value);
+  document.getElementById('date').value=dates[Math.min(dates.length-1,Math.max(0,i+dir))];render();}
+async function loadMonth(ym){if(MONTHS[ym]!==undefined)return MONTHS[ym];
+  try{MONTHS[ym]=await fetch(`data/intervals/${SID}/${ym}.json`).then(r=>{if(!r.ok)throw 0;return r.json();});}
+  catch(e){MONTHS[ym]=null;}return MONTHS[ym];}
+async function loadDay(day){const mo=await loadMonth(day.slice(0,7));return mo&&mo.days[day]?mo.days[day]:null;}
+// granularity of a day: 60 = hourly (historical TMAS), 15 = quarter-hour (recent)
+async function dayMinutes(day){const mo=await loadMonth(day.slice(0,7));
+  return (mo&&mo.day_minutes&&mo.day_minutes[day])?mo.day_minutes[day]:15;}
+function totals(lanes){const t=new Array(96).fill(0);if(lanes)Object.values(lanes).forEach(a=>a.forEach((v,i)=>t[i]+=(v||0)));return t;}
+function assignColors(lanes){ // map each direction to a color family
+  DIRCOLORS={};const dirs=[...new Set(Object.keys(lanes).map(k=>k.split('|')[0]))];
+  dirs.forEach((d,di)=>{const fam=di===0?A_FAM:B_FAM;DIRCOLORS[d]={};
+    const lns=Object.keys(lanes).filter(k=>k.startsWith(d+'|')).map(k=>k.split('|')[1]).sort();
+    lns.forEach((ln,li)=>DIRCOLORS[d][ln]=fam[Math.min(li,3)]);});}
+
+async function render(){
+  const day=document.getElementById('date').value;
+  const wd=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(day+'T00:00').getDay()];
+  const dowEl=document.getElementById('dow'); if(dowEl) dowEl.textContent=wd;
+  const row=DAILY.daily.find(r=>r.day===day),st=STATUS[row?.status]||STATUS.unknown;
+  let aadtCmp='';
+  if(row&&DAILY.base_aadt){const p=(row.volume-DAILY.base_aadt)/DAILY.base_aadt*100;
+    aadtCmp=`<span class="${p>=0?'up':'down'}">${p>=0?'+':''}${p.toFixed(0)}%</span>`;}
+  document.getElementById('headline').innerHTML=row?`
+    <div class="col"><div class="lab">Day total · ${DOW[row.dow]} ${day}</div>
+      <div class="big" style="color:${css(st.c)}">${fmt(row.volume)}</div></div>
+    <div class="col"><div class="lab">Status</div>
+      <div class="status" style="color:${css(st.c)}">${st.label}${row.pct!=null?' · '+(row.pct>0?'+':'')+row.pct+'%':''}</div></div>
+    <div class="col"><div class="lab">Typical this day</div><div class="v">${fmt(row.typical)}</div></div>
+    <div class="col"><div class="lab">AADT · ${DAILY.base_year}</div><div class="v">${fmt(DAILY.base_aadt)} ${aadtCmp}</div></div>
+    ${DAILY.current_ytd?`<div class="col"><div class="lab">${DAILY.current_year} YTD est</div><div class="v">${fmt(DAILY.current_ytd)}</div></div>`:''}`
+    :'<div class="msg">No data for this date.</div>';
+  const lanes=await loadDay(day);
+  const mins=await dayMinutes(day);
+  const twoWay=isTwoWayOnly(lanes);
+  const note=document.getElementById('twowayNote');
+  if(note) note.style.display = twoWay ? 'block' : 'none';
+  const dsCanvas=document.getElementById('dirsplit');
+  if(dsCanvas) dsCanvas.style.display = twoWay ? 'none' : 'block';
+  const dsLegend=document.getElementById('laneLegend');
+  if(dsLegend) dsLegend.style.display = twoWay ? 'none' : 'flex';
+  if(lanes)assignColors(lanes);
+  drawProfile(day,lanes,mins);
+  drawDirSplit(twoWay?null:lanes,mins);   // no lane/direction detail on 2-way days
+  drawLaneTotals(twoWay?null:lanes,day);
+  buildMetrics(lanes);
+  buildHourly(lanes);
+  drawContext();
+}
+// ===== Multi-day context charts (independent slideable window) =====
+function ctxWindow(){
+  const dates=DAILY.daily.map(r=>r.day).sort();
+  const sel=document.getElementById('date').value;
+  const center=CTX_CENTER||sel;
+  let ci=dates.indexOf(center);
+  if(ci<0){ // center not a data day: nearest
+    ci=dates.findIndex(d=>d>=center); if(ci<0)ci=dates.length-1;
+  }
+  const half=Math.floor(CTX_SIZE/2);
+  let lo=ci-half, hi=ci-half+CTX_SIZE-1;
+  if(lo<0){hi-=lo;lo=0;}
+  if(hi>dates.length-1){lo-=(hi-(dates.length-1));hi=dates.length-1;}
+  lo=Math.max(0,lo);
+  return {dates,win:dates.slice(lo,hi+1),sel};
+}
+function shiftContext(dir){
+  const {dates}=ctxWindow();
+  const cur=CTX_CENTER||document.getElementById('date').value;
+  let ci=dates.indexOf(cur); if(ci<0)ci=dates.length-1;
+  const ni=Math.max(0,Math.min(dates.length-1,ci+dir*Math.max(1,Math.floor(CTX_SIZE/2))));
+  CTX_CENTER=dates[ni];
+  drawContext();
+}
+async function drawContext(){
+  const {win,sel}=ctxWindow();
+  document.getElementById('ctxRange').textContent =
+    win.length?`${win[0]} → ${win[win.length-1]}  (${win.length} days)`:'—';
+  drawCtxDaily(win,sel);
+  await drawCtxProfile(win,sel);
+}
+function drawCtxDaily(win,sel){
+  const cv=document.getElementById('ctxDaily'),ctx=setup(cv);
+  const rows=win.map(d=>DAILY.daily.find(r=>r.day===d)).filter(Boolean);
+  if(!rows.length){noData(ctx,cv);return;}
+  const W=cv.clientWidth,H=150,pad={l:48,r:12,t:12,b:30};
+  const mx=Math.max(...rows.map(r=>r.volume||0),1);
+  const n=rows.length,bw=(W-pad.l-pad.r)/n;
+  const y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+  // gridlines
+  ctx.strokeStyle=css('--line');ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';ctx.lineWidth=1;
+  for(let g=0;g<=3;g++){const v=mx*g/3,yy=y(v);ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillText(fmt(v),4,yy+3);}
+  rows.forEach((r,i)=>{
+    const bx=pad.l+i*bw+bw*0.15,bwid=bw*0.7;
+    const isSel=r.day===sel;
+    ctx.fillStyle=isSel?css('--primary'):css('--s6');
+    ctx.fillRect(bx,y(r.volume),bwid,y(0)-y(r.volume));
+    ctx.fillStyle=isSel?css('--primary'):css('--ink-faint');
+    ctx.font=isSel?'bold 10px ui-monospace,monospace':'10px ui-monospace,monospace';
+    ctx.textAlign='center';
+    ctx.fillText(DOW[r.dow]||'',bx+bwid/2,H-16);
+    ctx.fillText(r.day.slice(5),bx+bwid/2,H-4);
+    ctx.textAlign='left';
+  });
+  cv.onmousemove=e=>{const rect=cv.getBoundingClientRect();
+    const rel=(e.clientX-rect.left)/rect.width*W;
+    const i=Math.floor((rel-pad.l)/bw);
+    if(i<0||i>=rows.length){hideTip();return;}
+    const r=rows[i];
+    showTip(e.clientX,e.clientY,`<b>${DOW[r.dow]} ${r.day}</b> · ${fmt(r.volume)}`);};
+  cv.onmouseleave=hideTip;
+}
+async function drawCtxProfile(win,sel){
+  const cv=document.getElementById('ctxProfile'),ctx=setup(cv);
+  // load each day's totals + granularity
+  const series=[];
+  for(const d of win){
+    const lanes=await loadDay(d); const mins=await dayMinutes(d);
+    if(!lanes){series.push({day:d,pts:[],mins});continue;}
+    const tot=totals(lanes);
+    const pts = mins===60 ? Array.from({length:24},(_,k)=>tot[k*4]||0) : tot;
+    series.push({day:d,pts,mins});
+  }
+  const W=cv.clientWidth,H=170,pad={l:48,r:12,t:12,b:22};
+  const allv=series.flatMap(s=>s.pts).filter(v=>v!=null);
+  const mx=Math.max(...allv,1);
+  const totalPts=series.reduce((a,s)=>a+(s.pts.length||1),0);
+  let gi=0;const xstep=(W-pad.l-pad.r)/Math.max(1,totalPts-1);
+  const y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+  // grid
+  ctx.strokeStyle=css('--line');ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';ctx.lineWidth=1;
+  for(let g=0;g<=3;g++){const v=mx*g/3,yy=y(v);ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillText(fmt(v),4,yy+3);}
+  // day separators + labels + highlight selected day's segment
+  let idx=0;
+  series.forEach(s=>{
+    const segStart=idx, segLen=s.pts.length||1;
+    const x0=pad.l+segStart*xstep, x1=pad.l+(segStart+segLen-1)*xstep;
+    if(s.day===sel){ctx.fillStyle=css('--primary')+'18';ctx.fillRect(x0,pad.t,x1-x0,H-pad.t-pad.b);}
+    ctx.strokeStyle=css('--line');ctx.beginPath();ctx.moveTo(x0,pad.t);ctx.lineTo(x0,H-pad.b);ctx.stroke();
+    ctx.fillStyle=s.day===sel?css('--primary'):css('--ink-faint');
+    ctx.font=s.day===sel?'bold 9px ui-monospace,monospace':'9px ui-monospace,monospace';
+    ctx.textAlign='center';ctx.fillText(DOW[(DAILY.daily.find(r=>r.day===s.day)||{}).dow]||'',(x0+x1)/2,H-6);ctx.textAlign='left';
+    idx+=segLen;
+  });
+  // the stitched line
+  ctx.beginPath();let started=false;idx=0;
+  series.forEach(s=>{
+    s.pts.forEach(v=>{const xx=pad.l+idx*xstep;
+      if(v==null){started=false;}else if(!started){ctx.moveTo(xx,y(v));started=true;}else ctx.lineTo(xx,y(v));
+      idx++;});
+    if(!s.pts.length)idx++;
+  });
+  ctx.strokeStyle=css('--primary');ctx.lineWidth=1.6;ctx.stroke();
+  cv.onmousemove=e=>{const rect=cv.getBoundingClientRect();
+    const rel=(e.clientX-rect.left)/rect.width*W;
+    const gpos=Math.round((rel-pad.l)/xstep);
+    // find which day/slot
+    let acc=0;
+    for(const s of series){const len=s.pts.length||1;
+      if(gpos<acc+len){const k=gpos-acc;const v=s.pts[k];
+        if(v==null){hideTip();return;}
+        const lbl=s.mins===60?String(k).padStart(2,'0')+':00':hhmm(k);
+        showTip(e.clientX,e.clientY,`<b>${s.day}</b> ${lbl} · ${fmt(v)}`);return;}
+      acc+=len;}
+    hideTip();};
+  cv.onmouseleave=hideTip;
+}
+function drawProfile(day,lanes,mins){
+  mins=mins||15;
+  const cv=document.getElementById('profile'),ctx=setup(cv),hint=document.getElementById('profHint');
+  if(!lanes){noData(ctx,cv);hint.textContent='No detail published for this date.';return;}
+  const hourly = mins===60;
+  const N = hourly?24:96;               // points to plot
+  // build the series at the right granularity
+  const compress = arr => { if(!hourly) return arr;
+    const h=new Array(24).fill(null);
+    for(let k=0;k<24;k++){const v=arr[k*4]; h[k]=(v==null?null:v);} return h; };
+  const a = compress(totals(lanes));
+  const b = CMP?compress(totals(CMP.lanes)):null;
+  const W=cv.clientWidth,H=230,pad={l:48,r:12,t:10,b:22};
+  hint.innerHTML=CMP?`<span style="color:${css('--primary')}">■</span> ${day} &nbsp;<span style="color:${css('--compare')}">■</span> ${CMP.day}`
+    :(hourly?'Total volume across all lanes, every hour (historical data)':'Total volume across all lanes, every 15 minutes');
+  const vals=a.filter(v=>v!=null);
+  const mx=Math.max(...vals,...(b?b.filter(v=>v!=null):[0]),1);
+  const x=i=>pad.l+i*(W-pad.l-pad.r)/(N-1),y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+  grid(ctx,W,H,pad,mx);
+  const drawLine=(arr,color,wdth)=>{ctx.beginPath();let started=false;
+    arr.forEach((v,i)=>{if(v==null){started=false;return;}
+      if(!started){ctx.moveTo(x(i),y(v));started=true;}else ctx.lineTo(x(i),y(v));});
+    ctx.strokeStyle=color;ctx.lineWidth=wdth;ctx.stroke();};
+  if(b)drawLine(b,css('--compare'),1.8);
+  // fill under main line
+  ctx.beginPath();let f=false;
+  a.forEach((v,i)=>{if(v==null)return;if(!f){ctx.moveTo(x(i),y(0));ctx.lineTo(x(i),y(v));f=true;}else ctx.lineTo(x(i),y(v));});
+  if(f){const li=a.map((v,i)=>v!=null?i:-1).filter(i=>i>=0).pop();ctx.lineTo(x(li),y(0));ctx.closePath();ctx.fillStyle=css('--primary')+'22';ctx.fill();}
+  drawLine(a,css('--primary'),2);
+  hourLabels(ctx,H,pad,x,N);
+  // hover
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();
+    const rel=(e.clientX-r.left)/(r.width)*W;
+    let i=Math.round((rel-pad.l)/((W-pad.l-pad.r)/(N-1)));
+    if(i<0||i>N-1||a[i]==null){hideTip();return;}
+    const lbl=hourly?String(i).padStart(2,'0')+':00':hhmm(i);
+    let h=`<b>${lbl}</b> · ${fmt(a[i])}`;
+    if(b&&b[i]!=null)h+=` <span style="color:${css('--compare')}">/ ${fmt(b[i])}</span>`;
+    showTip(e.clientX,e.clientY,h);};
+  cv.onmouseleave=hideTip;
+}
+function drawDirSplit(lanes,mins){
+  mins=mins||15;
+  const cv=document.getElementById('dirsplit'),ctx=setup(cv),legend=document.getElementById('laneLegend');legend.innerHTML='';
+  if(!lanes){noData(ctx,cv);return;}
+  const hourly=mins===60,N=hourly?24:96;
+  const at=(arr,i)=>hourly?(arr[i*4]||0):(arr[i]||0);   // read value at plot-index i
+  const allKeys=Object.keys(lanes).sort();
+  const dirs=[...new Set(allKeys.map(k=>k.split('|')[0]))];
+  const W=cv.clientWidth,H=200,pad={l:48,r:12,t:10,b:22};
+  const vis=k=>!HIDDEN.has(k);
+  let mx=1;
+  dirs.forEach(d=>{const keys=allKeys.filter(k=>k.startsWith(d+'|')&&vis(k));
+    for(let i=0;i<N;i++)mx=Math.max(mx,keys.reduce((s,k)=>s+at(lanes[k],i),0));});
+  const x=i=>pad.l+i*(W-pad.l-pad.r)/(N-1),y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+  grid(ctx,W,H,pad,mx);
+  dirs.forEach(d=>{
+    const keys=allKeys.filter(k=>k.startsWith(d+'|')&&vis(k));
+    const base=new Array(N).fill(0);
+    keys.forEach(k=>{const ln=k.split('|')[1],col=css(DIRCOLORS[d][ln]||'--s2');
+      ctx.beginPath();
+      for(let i=0;i<N;i++)ctx.lineTo(x(i),y(base[i]+at(lanes[k],i)));
+      for(let i=N-1;i>=0;i--)ctx.lineTo(x(i),y(base[i]));
+      ctx.closePath();ctx.fillStyle=col+'bb';ctx.fill();
+      for(let i=0;i<N;i++)base[i]+=at(lanes[k],i);});
+  });
+  allKeys.forEach(k=>{const[d,ln]=k.split('|'),col=css(DIRCOLORS[d]?.[ln]||'--s2');
+    const sp=document.createElement('span');
+    sp.style.cssText='cursor:pointer;'+(vis(k)?'':'opacity:.35');
+    const laneLabel=ln==='0'||ln==='ALL'?'':' L'+ln;
+    sp.innerHTML=`<span class="swatch" style="background:${col}"></span>${DIR_LABEL[d]||d}${laneLabel}`;
+    sp.onclick=()=>{if(HIDDEN.has(k))HIDDEN.delete(k);else HIDDEN.add(k);drawDirSplit(lanes,mins);};
+    legend.appendChild(sp);});
+  hourLabels(ctx,H,pad,x,N);
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();
+    const rel=(e.clientX-r.left)/(r.width)*W;
+    let i=Math.round((rel-pad.l)/((W-pad.l-pad.r)/(N-1)));
+    if(i<0||i>N-1){hideTip();return;}
+    const lbl=hourly?String(i).padStart(2,'0')+':00':hhmm(i);
+    let rows=`<b>${lbl}</b>`;
+    allKeys.filter(vis).forEach(k=>{const[d,ln]=k.split('|');
+      const laneLabel=ln==='0'||ln==='ALL'?'':' L'+ln;
+      rows+=`<br>${(DIR_LABEL[d]||d)}${laneLabel}: ${fmt(at(lanes[k],i))}`;});
+    showTip(e.clientX,e.clientY,rows);};
+  cv.onmouseleave=hideTip;
+}
+// Order lanes left-to-right like a top-down road cross-section:
+// SB/WB/outer-loop on the left (curb lane at the outer edge, rising toward
+// the median as you move right), NB/EB/inner-loop on the right (mirrored, so
+// the two median lanes meet in the middle). Falls back gracefully for 2WAY
+// or TMAS directional-total (lane "0"/"ALL") days.
+const LEFT_DIRS=new Set(['SB','WB','NEG']), RIGHT_DIRS=new Set(['NB','EB','POS']);
+function orderedLaneKeys(lanes){
+  const allKeys=Object.keys(lanes);
+  const byDir={};
+  allKeys.forEach(k=>{const[d,ln]=k.split('|');(byDir[d]=byDir[d]||[]).push(ln);});
+  const leftDir=Object.keys(byDir).find(d=>LEFT_DIRS.has(d));
+  const rightDir=Object.keys(byDir).find(d=>RIGHT_DIRS.has(d));
+  const numOf=ln=>{const n=parseInt(ln,10);return isNaN(n)?0:n;};
+  const seq=[];
+  if(leftDir) byDir[leftDir].slice().sort((a,b)=>numOf(a)-numOf(b))
+    .forEach(ln=>seq.push(leftDir+'|'+ln));
+  if(rightDir) byDir[rightDir].slice().sort((a,b)=>numOf(b)-numOf(a))
+    .forEach(ln=>seq.push(rightDir+'|'+ln));
+  Object.keys(byDir).forEach(d=>{if(d!==leftDir&&d!==rightDir)
+    byDir[d].forEach(ln=>seq.push(d+'|'+ln));});
+  return seq;
+}
+function drawLaneTotals(lanes,day){
+  const cv=document.getElementById('laneTotals'),ctx=setup(cv);
+  const note=document.getElementById('laneTotalsNote');
+  const dayLbl=document.getElementById('laneTotalsDay');
+  const header=document.getElementById('laneTotalsHeader');
+  dayLbl.textContent=day?('· '+day):'';
+  if(!lanes){note.style.display='block';note.textContent='No detail published for this date.';
+    cv.style.display='none';header.innerHTML='';return;}
+  const keys=orderedLaneKeys(lanes);
+  const dirsPresent=[...new Set(keys.map(k=>k.split('|')[0]))];
+  const leftD=dirsPresent.find(d=>LEFT_DIRS.has(d));
+  const rightD=dirsPresent.find(d=>RIGHT_DIRS.has(d));
+  header.innerHTML = (leftD||rightD)
+    ? `<span>${leftD?(DIR_LABEL[leftD]||leftD):''}</span><span>${rightD?(DIR_LABEL[rightD]||rightD):''}</span>`
+    : `<span>${DIR_LABEL[dirsPresent[0]]||dirsPresent[0]||''}</span>`;
+  const sums=keys.map(k=>(lanes[k]||[]).reduce((s,v)=>s+(v||0),0));
+  const grand=sums.reduce((s,v)=>s+v,0);
+  const perLane=keys.every(k=>{const[,ln]=k.split('|');return ln==='0'||ln==='ALL';});
+  if(perLane&&keys.length<=2){
+    note.style.display='block';
+    note.textContent='This data source reports directional totals only — no per-lane breakdown is available for this date.';
+  } else { note.style.display='none'; }
+  cv.style.display='block';
+  const W=cv.clientWidth,H=180,pad={l:48,r:12,t:16,b:34};
+  const mx=Math.max(...sums,1);
+  const n=keys.length||1,bw=(W-pad.l-pad.r)/n;
+  const y=v=>H-pad.b-(v/mx)*(H-pad.t-pad.b);
+  ctx.strokeStyle=css('--line');ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';ctx.lineWidth=1;
+  for(let g=0;g<=3;g++){const v=mx*g/3,yy=y(v);ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillText(fmt(v),4,yy+3);}
+  // median divider between the two direction groups, if both present
+  const leftCount=keys.filter(k=>LEFT_DIRS.has(k.split('|')[0])).length;
+  if(leftCount>0&&leftCount<keys.length){
+    const xm=pad.l+leftCount*bw;
+    ctx.strokeStyle=css('--line');ctx.setLineDash([3,3]);
+    ctx.beginPath();ctx.moveTo(xm,pad.t);ctx.lineTo(xm,H-pad.b);ctx.stroke();ctx.setLineDash([]);
+  }
+  keys.forEach((k,i)=>{
+    const[d,ln]=k.split('|'),col=css(DIRCOLORS[d]?.[ln]||'--s2');
+    const bx=pad.l+i*bw+bw*0.15,bwid=bw*0.7,v=sums[i];
+    ctx.fillStyle=col;ctx.fillRect(bx,y(v),bwid,y(0)-y(v));
+    const pct=grand?((v/grand)*100):0;
+    ctx.fillStyle=css('--ink');ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';
+    ctx.fillText(pct.toFixed(0)+'%',bx+bwid/2,y(v)-6);
+    ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';
+    const laneLabel=ln==='0'||ln==='ALL'?'':'L'+ln;
+    ctx.fillText((DIR_SHORT[d]||d)+(laneLabel?' '+laneLabel:''),bx+bwid/2,H-20);
+    ctx.fillText(fmt(v),bx+bwid/2,H-8);
+    ctx.textAlign='left';
+  });
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();
+    const rel=(e.clientX-r.left)/(r.width)*W;
+    const i=Math.floor((rel-pad.l)/bw);
+    if(i<0||i>=keys.length){hideTip();return;}
+    const[d,ln]=keys[i].split('|'),v=sums[i],pct=grand?((v/grand)*100):0;
+    const laneLabel=ln==='0'||ln==='ALL'?'':' lane '+ln;
+    showTip(e.clientX,e.clientY,`<b>${DIR_LABEL[d]||d}${laneLabel}</b> · ${fmt(v)} (${pct.toFixed(1)}%)`);};
+  cv.onmouseleave=hideTip;
+}
+function buildMetrics(lanes){
+  const box=document.getElementById('metrics');
+  if(!lanes){box.innerHTML='<div class="msg" style="grid-column:1/-1">No 15-minute data.</div>';return;}
+  const t=totals(lanes),dayTot=t.reduce((a,b)=>a+b,0);
+  let pk=0,pki=0;t.forEach((v,i)=>{if(v>pk){pk=v;pki=i;}});
+  let ph=0,phi=0;for(let i=0;i<=92;i++){const s=t[i]+t[i+1]+t[i+2]+t[i+3];if(s>ph){ph=s;phi=i;}}
+  const phf=ph/(4*pk||1),am=t.slice(0,48).reduce((a,b)=>a+b,0),pm=t.slice(48).reduce((a,b)=>a+b,0);
+  box.innerHTML=`
+    <div class="metric"><div class="k">Peak hour</div><div class="val">${fmt(ph)}</div><div class="sub">${hhmm(phi)}–${hhmm(phi+4)}</div></div>
+    <div class="metric"><div class="k">Peak 15-min</div><div class="val">${fmt(pk)}</div><div class="sub">at ${hhmm(pki)}</div></div>
+    <div class="metric"><div class="k">Peak hour factor</div><div class="val">${phf.toFixed(2)}</div><div class="sub">peak hr ÷ (4 × peak 15m)</div></div>
+    <div class="metric"><div class="k">AM / PM split</div><div class="val">${Math.round(am/dayTot*100)}/${Math.round(pm/dayTot*100)}</div><div class="sub">share before / after noon</div></div>`;
+}
+function buildHourly(lanes){
+  const wrap=document.getElementById('hourlyWrap');
+  if(!lanes){wrap.innerHTML='<div class="msg">No 15-minute detail for this month.</div>';return;}
+  const dirs=[...new Set(Object.keys(lanes).map(k=>k.split('|')[0]))];
+  const keys=Object.keys(lanes).sort();
+  // header: lane cols grouped, a subtotal per direction, then grand total
+  let head='<th>Hour</th>';
+  keys.forEach(k=>{const[d,l]=k.split('|');head+=`<th>${(DIR_LABEL[d]||d).slice(0,3)} L${l}</th>`;});
+  dirs.forEach(d=>head+=`<th class="dirtot">${(DIR_LABEL[d]||d).slice(0,3)} tot</th>`);
+  head+='<th class="grand">Total</th>';
+  let html=`<table class="hrs"><thead><tr>${head}</tr></thead><tbody>`;
+  for(let h=0;h<24;h++){
+    let grand=0;const dtot={};dirs.forEach(d=>dtot[d]=0);
+    let cells='';
+    keys.forEach(k=>{const[d]=k.split('|');let s=0;for(let q=0;q<4;q++)s+=(lanes[k][h*4+q]||0);
+      dtot[d]+=s;grand+=s;cells+=`<td>${fmt(s)}</td>`;});
+    let dcells='';dirs.forEach(d=>dcells+=`<td class="dirtot">${fmt(dtot[d])}</td>`);
+    html+=`<tr><td>${String(h).padStart(2,'0')}:00</td>${cells}${dcells}<td class="grand">${fmt(grand)}</td></tr>`;
+  }
+  wrap.innerHTML=html+'</tbody></table>';
+}
+function heatSource(dir){
+  // returns {dayISO: volume} for 'Total' or a specific direction
+  if(dir==='Total') return Object.fromEntries(DAILY.daily.map(r=>[r.day,r.volume]));
+  return (DAILY.daily_by_dir||{})[dir]||{};
+}
+function buildHeatmap(dir){
+  dir=dir||'Total';
+  // toggle buttons: Total + each available direction
+  const dirs=Object.keys(DAILY.daily_by_dir||{}).sort();
+  const opts=['Total',...dirs];
+  const tog=document.getElementById('heatToggle');
+  tog.innerHTML=opts.map(o=>{
+    const label=o==='Total'?'Total':(DIR_LABEL[o]||o);
+    const on=o===dir;
+    return `<button class="chip${on?' on':''}" data-dir="${o}">${label}</button>`;
+  }).join('');
+  tog.querySelectorAll('button').forEach(btn=>btn.onclick=()=>buildHeatmap(btn.dataset.dir));
+
+  const src=heatSource(dir);
+  const cells={};
+  Object.entries(src).forEach(([dayISO,vol])=>{const d=new Date(dayISO+'T00:00');
+    const k=d.getDay()+'_'+d.getMonth();  // getDay: 0=Sun
+    // remap to Mon..Sun index used by DOW array
+    const dw=(d.getDay()+6)%7;
+    const kk=dw+'_'+d.getMonth();
+    (cells[kk]=cells[kk]||[]).push(vol);});
+  const med=a=>{const s=[...a].sort((x,y)=>x-y);return s[Math.floor(s.length/2)];};
+  let lo=Infinity,hi=-Infinity;Object.values(cells).forEach(a=>{const m=med(a);lo=Math.min(lo,m);hi=Math.max(hi,m);});
+  const color=v=>{const t=(v-lo)/((hi-lo)||1),stops=[[29,58,82],[47,102,144],[90,169,214],[224,165,59],[224,93,59]];
+    const seg=Math.min(3.999,t*4),i=Math.floor(seg),f=seg-i;
+    const c=stops[i].map((x,k)=>Math.round(x+(stops[i+1][k]-x)*f));return `rgb(${c.join(',')})`;};
+  let html='<div class="hlab"></div>'+MON.map(m=>`<div class="hlab">${m}</div>`).join('');
+  for(let dw=0;dw<7;dw++){html+=`<div class="rlab">${DOW[dw]}</div>`;
+    for(let mo=0;mo<12;mo++){const a=cells[dw+'_'+mo];
+      html+=a?`<div class="cell" style="background:${color(med(a))}" title="${DOW[dw]} ${MON[mo]}: ${fmt(med(a))}"></div>`
+        :'<div class="cell" style="background:var(--panel-2)"></div>';}}
+  document.getElementById('heat').innerHTML=html;
+}
+function setup(cv){const r=window.devicePixelRatio||1,h=+cv.getAttribute('height');
+  cv.width=cv.clientWidth*r;cv.height=h*r;cv.style.height=h+'px';const ctx=cv.getContext('2d');ctx.scale(r,r);return ctx;}
+function grid(ctx,W,H,pad,mx){ctx.strokeStyle=css('--line');ctx.fillStyle=css('--ink-faint');ctx.lineWidth=1;ctx.font='10px ui-monospace,monospace';
+  for(let g=0;g<=4;g++){const v=mx*g/4,yy=H-pad.b-(v/mx)*(H-pad.t-pad.b);
+    ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(W-pad.r,yy);ctx.stroke();ctx.fillText(fmt(v),4,yy+3);}}
+function hourLabels(ctx,H,pad,x,N){ctx.fillStyle=css('--ink-faint');ctx.font='10px ui-monospace,monospace';
+  N=N||96;const perHour=N/24;
+  [0,6,12,18,24].forEach(h=>{const i=Math.min(N-1,h*perHour);ctx.fillText(String(h).padStart(2,'0'),x(i)-6,H-6);});}
+function noData(ctx,cv){ctx.fillStyle=css('--ink-faint');ctx.font='13px sans-serif';ctx.textAlign='center';
+  ctx.fillText('No 15-minute detail for this date',cv.clientWidth/2,90);ctx.textAlign='left';}
+</script>
+</body>
+</html>
